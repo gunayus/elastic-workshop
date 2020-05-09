@@ -18,3 +18,19 @@ https://www.elastic.co/downloads/kibana
 
 the maven project provided in this repository will be enough to run spring boot application
 
+
+## introduction to kibana
+Beside it's many features, kibana is very useful for sending HTTP requests (index management, document operations, search requests, etc.) to elastic server and visualizing the results in JSON format.
+
+if started with default configuration, kibana will be running on following address
+
+http://localhost:5601/
+
+in order to run elastic requests, dev tools console can be activated in either way
+
++ http://localhost:5601/app/kibana#/dev_tools/console
++ click on the tools button towards the bottom of the tool bar 
+
+![kibana dev tools console](/doc/kibana_dev_tools_console.png?raw=true)
+
+  

@@ -33,7 +33,12 @@ in order to run elastic requests, dev tools console can be activated in either w
 
 ![kibana dev tools console](/doc/kibana_dev_tools_console.png?raw=true)
 
-in order to execute a specific request just click on the send request (play) button to the right of the top line of the command
+in order to execute a specific request just click on the send request (play) button to the right of the first line of the command
 
 ![kibana dev tool send request](/doc/kibana_dev_tools_send_request.png?raw=true)
 
+in order to list the existing indices in elastic search just run this command
+
+`GET /_cat/indices?v
+`
+ 

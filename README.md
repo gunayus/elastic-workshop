@@ -37,8 +37,10 @@ in order to execute a specific request just click on the send request (play) but
 
 ![kibana dev tool send request](/doc/kibana_dev_tools_send_request.png?raw=true)
 
-in order to list the existing indices in elastic search just run this command
+in order to list the existing indices in elastic search just run this command from kibana dev tools console
 
 `GET /_cat/indices?v
 `
+
+## search as you type
  

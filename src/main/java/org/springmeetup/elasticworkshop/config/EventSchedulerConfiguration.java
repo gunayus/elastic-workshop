@@ -6,6 +6,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springmeetup.elasticworkshop.service.ElasticSearchService;
+import org.springmeetup.elasticworkshop.service.EventProcessingService;
 
 @Configuration
 @EnableScheduling
@@ -13,12 +14,10 @@ import org.springmeetup.elasticworkshop.service.ElasticSearchService;
 @Slf4j
 public class EventSchedulerConfiguration {
 
-	private final ElasticSearchService elasticSearchService;
+	private final EventProcessingService eventProcessingService;
 
 	@Scheduled(cron = "${listen-event.scheduler.cron}")
 	public void runPartialIndexers() {
-		log.info("updating rankings ... ");
-		elasticSearchService.updateArtistRankings();
-
+		eventProcessingService.updateArtistRankings();
 	}
 }

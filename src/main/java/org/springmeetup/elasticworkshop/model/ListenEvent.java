@@ -18,9 +18,6 @@ public class ListenEvent {
 	@JsonProperty("artist_id")
 	private String artistId;
 
-	@JsonProperty("song_id")
-	private String songId;
-
 	@JsonProperty("user_id")
 	private String userId;
 

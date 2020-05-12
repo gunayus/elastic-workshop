@@ -13,19 +13,12 @@ import java.time.LocalDateTime;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class ListenEvent {
+public class ArtistRanking {
 
 	@JsonProperty("artist_id")
 	private String artistId;
 
-	@JsonProperty("song_id")
-	private String songId;
-
-	@JsonProperty("user_id")
-	private String userId;
-
-	@JsonProperty( value = "timestamp")
-	@JsonFormat(shape = JsonFormat.Shape.STRING, pattern ="yyyy-MM-dd'T'HH:mm:ss.SSS")
-	private LocalDateTime timestamp;
+	@JsonProperty("ranking")
+	private Long ranking;
 
 }

@@ -25,8 +25,7 @@ public class EventController {
 			listenEvent.setTimestamp(LocalDateTime.now());
 		}
 
-		String indexName = elasticSearchService.getCurrentIndexName();
-		return elasticSearchService.indexDocument(indexName, null, listenEvent);
+		return elasticSearchService.saveListenEvent(listenEvent);
 	}
 
 }

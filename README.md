@@ -54,7 +54,7 @@ in order to update the rankings of artists and users' profile for personalized s
 + update artist rakings
 + update user profiles based on listening events
 
-#### index template
+#### listen-event-* index template
 let's create an index template for listen-events so that each index inherits the field mappings and index settings. 
 
 ```PUT _template/listen_events_template
@@ -83,3 +83,24 @@ let's create an index template for listen-events so that each index inherits the
 }
 ```
 
+#### artist-ranking-* index template
+let's create an index template for aritst-ranking indices so that each index inherits the field mappings and index settings. 
+
+```PUT _template/artist_rankings_template
+{
+  "index_patterns": ["artist-ranking*"],
+  "settings": {
+    "number_of_shards": 1
+  },
+  "mappings": {
+    "properties": {
+      "artist_id": {
+        "type": "keyword"
+      },
+      "ranking": {
+        "type": "long"
+      }
+    }
+  }
+}
+```

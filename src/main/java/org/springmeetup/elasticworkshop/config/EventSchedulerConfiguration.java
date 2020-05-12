@@ -19,5 +19,6 @@ public class EventSchedulerConfiguration {
 	public void runPartialIndexers() {
 		log.info("updating rankings ... ");
 		elasticSearchService.updateArtistRankings();
+
 	}
 }

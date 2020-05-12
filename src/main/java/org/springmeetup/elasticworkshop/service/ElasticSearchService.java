@@ -23,6 +23,7 @@ import org.elasticsearch.common.xcontent.XContentType;
 import org.elasticsearch.index.query.*;
 import org.elasticsearch.index.query.functionscore.FunctionScoreQueryBuilder;
 import org.elasticsearch.index.query.functionscore.ScoreFunctionBuilders;
+import org.elasticsearch.index.query.functionscore.ScriptScoreFunctionBuilder;
 import org.elasticsearch.rest.RestStatus;
 import org.elasticsearch.script.Script;
 import org.elasticsearch.script.ScriptType;
@@ -33,9 +34,7 @@ import org.elasticsearch.search.builder.SearchSourceBuilder;
 import org.elasticsearch.search.sort.SortOrder;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
-import org.springmeetup.elasticworkshop.model.ArtistDocument;
-import org.springmeetup.elasticworkshop.model.ArtistRanking;
-import org.springmeetup.elasticworkshop.model.ListenEvent;
+import org.springmeetup.elasticworkshop.model.*;
 
 import java.io.IOException;
 import java.time.Duration;
@@ -49,6 +48,8 @@ import java.util.*;
 @Slf4j
 public class ElasticSearchService {
 	public final static String CONTENT_INDEX_NAME = "content";
+	public final static String USER_PROFILE_INDEX_NAME = "user-profile";
+	
 	public final static String LISTEN_EVENT_INDEX_NAME_PREFIX = "listen-event-";
 	public final static String ARTIST_RANKING_INDEX_NAME_PREFIX = "artist-ranking-";
 
@@ -61,12 +62,25 @@ public class ElasticSearchService {
 	@Value("${artist-ranking.index.duration.inmins}")
 	public int artistRankingIndexDurationInMins;
 
-	public List<ArtistDocument> searchArtists(String queryString, int from, int size) {
+	/**
+	 * performs following operations in elasticsearch
+	 *  query string (full text)
+	 *  ranking based boosting
+	 *  user profile based boosting
+	 *
+	 * @param queryString
+	 * @param from
+	 * @param size
+	 * @return
+	 */
+	public List<ArtistDocument> searchArtists(String queryString, String userId, int from, int size) {
 		SearchRequest searchRequest = new SearchRequest(CONTENT_INDEX_NAME);
 		SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
 		searchRequest.source(searchSourceBuilder);
 
-		// query
+		UserProfile userProfile = getDocument(USER_PROFILE_INDEX_NAME, userId, UserProfile.class);
+		
+		// full text search - query string
 		BoolQueryBuilder boolQueryBuilder = new BoolQueryBuilder()
 				.should(new MultiMatchQueryBuilder(queryString)
 							.field("artist_name", 2.0f) //artist_name token matches have double boost factor
@@ -83,12 +97,33 @@ public class ElasticSearchService {
 				)
 				.minimumShouldMatch(1);
 
-		FunctionScoreQueryBuilder.FilterFunctionBuilder[] filterFunctionBuilders = new FunctionScoreQueryBuilder.FilterFunctionBuilder[1];
-		filterFunctionBuilders[0] = new FunctionScoreQueryBuilder.FilterFunctionBuilder(
-				ScoreFunctionBuilders.scriptFunction(
-					"Math.max(_score * ((!doc['ranking'].empty ) ? doc['ranking'].value / 2 : 1)  - _score , 0)"
-				)
-		);
+		List<ScriptScoreFunctionBuilder> scriptScoreFunctionBuilders = new ArrayList<>();
+
+		// ranking based score function builder
+		scriptScoreFunctionBuilders.add(ScoreFunctionBuilders.scriptFunction(
+				"Math.max(_score * ((!doc['ranking'].empty ) ? Math.log(doc['ranking'].value) / Math.log(2) : 1)  - _score , 0)"
+		));
+
+		// user profile based score function builder
+		if (userProfile != null && ! userProfile.getArtistRankingSet().isEmpty()) {
+			String artistRankBooster = "";
+			for (ArtistRanking artistRanking : userProfile.getArtistRankingSet()) {
+				artistRankBooster += (artistRankBooster.isEmpty() ? "" : " * ") +
+						String.format("((!doc['artist_id'].empty &&  doc['artist_id'].value == '%s') ? %f : 1)",
+								artistRanking.getArtistId(),
+								log2(artistRanking.getRanking()));
+			}
+
+			scriptScoreFunctionBuilders.add(ScoreFunctionBuilders.scriptFunction(
+					"Math.max(_score * " + artistRankBooster + " - _score , 0)"
+			));
+
+		}
+		
+		FunctionScoreQueryBuilder.FilterFunctionBuilder[] filterFunctionBuilders = new FunctionScoreQueryBuilder.FilterFunctionBuilder[scriptScoreFunctionBuilders.size()];
+		for (int i = 0; i < scriptScoreFunctionBuilders.size(); i++) {
+			filterFunctionBuilders[i] = new FunctionScoreQueryBuilder.FilterFunctionBuilder(scriptScoreFunctionBuilders.get(i));
+		}
 
 		FunctionScoreQueryBuilder functionScoreQueryBuilder = new FunctionScoreQueryBuilder(boolQueryBuilder, filterFunctionBuilders)
 				.scoreMode(FunctionScoreQuery.ScoreMode.SUM);
@@ -113,6 +148,11 @@ public class ElasticSearchService {
 		return result;
 	}
 
+	public static float log2(float x)
+	{
+		return (float) (Math.log(x) / Math.log(2));
+	}
+	
 
 	/**
 	 * return the index name of the current period for indexing event documents
@@ -148,10 +188,13 @@ public class ElasticSearchService {
 	}
 
 	public void updateArtistRankings() {
-		Map<String, Long> artistRankingMap = queryRecentAggregatedArtistRankingsFromListenEvents();
+		AggregatedUserArtistRankings aggregatedUserArtistRankings = queryRecentAggregatedArtistRankingsFromListenEvents();
+		Map<String, Long> artistRankingMap = aggregatedUserArtistRankings.getArtistRankingMap();
+		Map<String, Set<ArtistRanking>> userArtistRankingMap = aggregatedUserArtistRankings.getUserArtistRankingMap();
 
 		BulkRequest bulkUpdateRankingRequest = new BulkRequest();
 
+		// update artist rankings
 		for (String artistId : artistRankingMap.keySet()) {
 			Map<String, Object> parameters = Collections.singletonMap("count", artistRankingMap.get(artistId));
 			Script inline = new Script(ScriptType.INLINE, "painless",
@@ -182,6 +225,49 @@ public class ElasticSearchService {
 			}
 		}
 
+		// update user artist rankings
+		for (String userId : userArtistRankingMap.keySet()) {
+			Set<ArtistRanking> userArtistRankingSet = userArtistRankingMap.get(userId);
+
+			UserProfile userProfile = getDocument(USER_PROFILE_INDEX_NAME, userId, UserProfile.class);
+
+			// new user, index new document
+			if (userProfile == null) {
+				userProfile = UserProfile.builder()
+						.userId(userId)
+						.artistRankingSet(userArtistRankingSet)
+						.build();
+
+			} else {
+				if (userProfile.getArtistRankingSet() == null) {
+					userProfile.setArtistRankingSet(new HashSet<>());
+				}
+
+				// update existing user profile, this part should be definitely refactored
+				for (ArtistRanking artistRanking : userArtistRankingSet) {
+					ArtistRanking existingArtistRanking = userProfile.getArtistRankingSet().stream()
+							.filter(artistRanking1 -> artistRanking1.getArtistId().equals(artistRanking.getArtistId()))
+							.findFirst()
+							.orElseGet(() -> null);
+
+					if (existingArtistRanking == null) {
+						userProfile.getArtistRankingSet().add(artistRanking);
+					} else {
+						long updatedRanking = existingArtistRanking.getRanking() == null ? 0 : existingArtistRanking.getRanking();
+						updatedRanking += artistRanking.getRanking();
+
+						existingArtistRanking.setRanking(updatedRanking);
+					}
+				}
+
+			}
+
+			IndexRequest userProfileIndexRequest = new IndexRequest(USER_PROFILE_INDEX_NAME);
+			userProfileIndexRequest.id(userId);
+			userProfileIndexRequest.source(toJsonString(userProfile), XContentType.JSON);
+			bulkUpdateRankingRequest.add(userProfileIndexRequest);
+
+		}
 		if (bulkUpdateRankingRequest.numberOfActions() > 0) {
 			executeBulkRequest(bulkUpdateRankingRequest);
 		}
@@ -197,7 +283,7 @@ public class ElasticSearchService {
 		return indexDocument(indexName, null, listenEvent);
 	}
 
-	private Map<String, Long> queryRecentAggregatedArtistRankingsFromListenEvents() {
+	private AggregatedUserArtistRankings queryRecentAggregatedArtistRankingsFromListenEvents() {
 		String indexName = getPreviousIndexName(LISTEN_EVENT_INDEX_NAME_PREFIX, listenEventIndexDurationInMins);
 		log.info("querying recent artist rankings from index [{}]", indexName);
 
@@ -213,25 +299,60 @@ public class ElasticSearchService {
 				.size(1000)
 		);
 
+		searchSourceBuilder.aggregation(AggregationBuilders.terms("users")
+				.field("user_id")
+				.size(1000)
+				.subAggregation(AggregationBuilders.terms("artist_rankings")
+						.field("artist_id")
+						.size(1000)
+				)
+		);
+
 		searchRequest.source(searchSourceBuilder);
 
 		final Map<String, Long> artistRankingMap = new HashMap<>();
+		final Map<String, Set<ArtistRanking>> userArtistRankingMap = new HashMap<>();
+		final AggregatedUserArtistRankings aggregatedUserArtistRankings = AggregatedUserArtistRankings.builder()
+				.artistRankingMap(artistRankingMap)
+				.userArtistRankingMap(userArtistRankingMap)
+				.build();
+
 		try {
 			SearchResponse searchResponse = client.search(searchRequest, RequestOptions.DEFAULT);
 
 			if (searchResponse.getAggregations() != null) {
-				Terms terms = searchResponse.getAggregations().get("artist_rankings");
+				Terms artistRankingsTerms = searchResponse.getAggregations().get("artist_rankings");
 
-				terms.getBuckets().stream()
+				artistRankingsTerms.getBuckets().stream()
 						.map(bucket -> (Terms.Bucket) bucket) // cast to (Terms.Bucket)
 						.forEach(termsBucket -> artistRankingMap.put(termsBucket.getKeyAsString(), termsBucket.getDocCount()))
 				;
+
+				Terms usersTerms = searchResponse.getAggregations().get("users");
+				usersTerms.getBuckets().stream()
+						.map(bucket -> (Terms.Bucket) bucket) // cast to (Terms.Bucket)
+						.forEach(userBucket -> {
+							String userId = userBucket.getKeyAsString();
+							final Set<ArtistRanking> userArtistRankingSet = new HashSet<>();
+
+							Terms userArtistRankingsTerms = userBucket.getAggregations().get("artist_rankings");
+							userArtistRankingsTerms.getBuckets().stream()
+									.map(artistRankingBucket -> (Terms.Bucket) artistRankingBucket)
+									.forEach(artistRankingBucket -> userArtistRankingSet.add(ArtistRanking.builder()
+											.artistId(artistRankingBucket.getKeyAsString())
+											.ranking(artistRankingBucket.getDocCount())
+											.build()
+											)
+									);
+
+							userArtistRankingMap.put(userId, userArtistRankingSet);
+						});
 			}
 		} catch (IOException ioe) {
 			throw new RuntimeException(ioe);
 		}
 
-		return artistRankingMap;
+		return aggregatedUserArtistRankings;
 	}
 
 	/**

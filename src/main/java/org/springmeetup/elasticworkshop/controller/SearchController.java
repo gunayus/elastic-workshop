@@ -20,8 +20,9 @@ public class SearchController {
 
 	@GetMapping("/artist")
 	public List<ArtistDocument> searchArtists(@RequestParam(name = "q", required = true) String queryString,
+	                                          @RequestParam(name = "userid", required = true) String userId,
 	                                    @RequestParam(name = "from", required = false, defaultValue = "0") Integer from,
 	                                    @RequestParam(name = "size", required = false, defaultValue = "10") Integer size) {
-		return elasticSearchService.searchArtists(queryString, from, size);
+		return elasticSearchService.searchArtists(queryString, userId, from, size);
 	}
 }

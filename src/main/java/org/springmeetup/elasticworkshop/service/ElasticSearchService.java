@@ -9,7 +9,6 @@ import org.elasticsearch.action.bulk.BulkItemResponse;
 import org.elasticsearch.action.bulk.BulkRequest;
 import org.elasticsearch.action.bulk.BulkResponse;
 import org.elasticsearch.action.get.GetRequest;
-import org.elasticsearch.action.get.GetRequestBuilder;
 import org.elasticsearch.action.get.GetResponse;
 import org.elasticsearch.action.index.IndexRequest;
 import org.elasticsearch.action.index.IndexResponse;
@@ -19,17 +18,22 @@ import org.elasticsearch.action.support.IndicesOptions;
 import org.elasticsearch.action.update.UpdateRequest;
 import org.elasticsearch.client.RequestOptions;
 import org.elasticsearch.client.RestHighLevelClient;
+import org.elasticsearch.common.lucene.search.function.FunctionScoreQuery;
 import org.elasticsearch.common.xcontent.XContentType;
-import org.elasticsearch.index.query.QueryBuilder;
-import org.elasticsearch.index.query.QueryBuilders;
+import org.elasticsearch.index.query.*;
+import org.elasticsearch.index.query.functionscore.FunctionScoreQueryBuilder;
+import org.elasticsearch.index.query.functionscore.ScoreFunctionBuilders;
 import org.elasticsearch.rest.RestStatus;
 import org.elasticsearch.script.Script;
 import org.elasticsearch.script.ScriptType;
+import org.elasticsearch.search.SearchHit;
 import org.elasticsearch.search.aggregations.AggregationBuilders;
 import org.elasticsearch.search.aggregations.bucket.terms.Terms;
 import org.elasticsearch.search.builder.SearchSourceBuilder;
+import org.elasticsearch.search.sort.SortOrder;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springmeetup.elasticworkshop.model.ArtistDocument;
 import org.springmeetup.elasticworkshop.model.ArtistRanking;
 import org.springmeetup.elasticworkshop.model.ListenEvent;
 
@@ -38,10 +42,7 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
-import java.time.temporal.ChronoField;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.*;
 
 @Service
 @RequiredArgsConstructor
@@ -59,6 +60,59 @@ public class ElasticSearchService {
 
 	@Value("${artist-ranking.index.duration.inmins}")
 	public int artistRankingIndexDurationInMins;
+
+	public List<ArtistDocument> searchArtists(String queryString, int from, int size) {
+		SearchRequest searchRequest = new SearchRequest(CONTENT_INDEX_NAME);
+		SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
+		searchRequest.source(searchSourceBuilder);
+
+		// query
+		BoolQueryBuilder boolQueryBuilder = new BoolQueryBuilder()
+				.should(new MultiMatchQueryBuilder(queryString)
+							.field("artist_name", 2.0f) //artist_name token matches have double boost factor
+							.field("artist_name.prefix", 1.0f)
+							.type(MultiMatchQueryBuilder.Type.BEST_FIELDS)
+							.operator(Operator.AND)
+							.fuzziness("0")
+				)
+				.should(new MultiMatchQueryBuilder(queryString)
+						.field("artist_name.prefix", 0.5f) //artist_name token matches have double boost factor
+						.type(MultiMatchQueryBuilder.Type.BEST_FIELDS)
+						.operator(Operator.AND)
+						.fuzziness("1")
+				)
+				.minimumShouldMatch(1);
+
+		FunctionScoreQueryBuilder.FilterFunctionBuilder[] filterFunctionBuilders = new FunctionScoreQueryBuilder.FilterFunctionBuilder[1];
+		filterFunctionBuilders[0] = new FunctionScoreQueryBuilder.FilterFunctionBuilder(
+				ScoreFunctionBuilders.scriptFunction(
+					"Math.max(_score * ((!doc['ranking'].empty ) ? doc['ranking'].value / 2 : 1)  - _score , 0)"
+				)
+		);
+
+		FunctionScoreQueryBuilder functionScoreQueryBuilder = new FunctionScoreQueryBuilder(boolQueryBuilder, filterFunctionBuilders)
+				.scoreMode(FunctionScoreQuery.ScoreMode.SUM);
+
+		searchSourceBuilder.query(functionScoreQueryBuilder);
+		searchSourceBuilder.sort("_score", SortOrder.DESC);
+		searchSourceBuilder.from(from);
+		searchSourceBuilder.size(size);
+
+		List<ArtistDocument> result = new ArrayList<>();
+		try {
+			SearchResponse searchResponse = client.search(searchRequest, RequestOptions.DEFAULT);
+			for (SearchHit searchHit : searchResponse.getHits().getHits()) {
+				ArtistDocument artistDocument = toDocumentObject(searchHit.getSourceAsString(), ArtistDocument.class);
+				artistDocument.set_score(searchHit.getScore());
+				result.add(artistDocument);
+			}
+		} catch (IOException ioe) {
+			throw new RuntimeException(ioe);
+		}
+
+		return result;
+	}
+
 
 	/**
 	 * return the index name of the current period for indexing event documents

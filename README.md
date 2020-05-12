@@ -57,7 +57,7 @@ in order to update the rankings of artists and users' profile for personalized s
 #### index template
 let's create an index template for listen-events so that each index inherits the field mappings and index settings. 
 
-`PUT _template/listen_events_template
+```PUT _template/listen_events_template
 {
   "index_patterns": ["listen-event*"],
   "settings": {
@@ -81,4 +81,5 @@ let's create an index template for listen-events so that each index inherits the
     }
   }
 }
-`
+```
+

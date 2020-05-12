@@ -43,6 +43,8 @@ in order to list the existing indices in elastic search just run this command fr
 `
 
 ## 2 search as you type - analyzers
+
+### 2.1 understanding analyzers 
 by default, if a custom setting is not applied, elasticsearch will analyze the input text with the 'standard' analyzer.
 
 ```
@@ -193,16 +195,103 @@ POST _analyze
   ]  
 }
 ```
+### 2.2 index settings (analyzers) and field mappings 
+now we need to delete the index that has been created automatically in the previous step 
 
+```
+DELETE /content
+```
+
+create the content index with analyzer settings and field mappings. the following call will create an empty index. pay attention to artist_name property and it's additional field 'prefix' which is derived from the artist_name value.
+
+```
+PUT /content
+{
+    "settings": {
+        "analysis": {
+            "filter": {
+                "front_ngram": {
+                    "type": "edge_ngram",
+                    "min_gram": "1",
+                    "max_gram": "12"
+                }
+            },
+            "analyzer": {
+                "i_prefix": {
+                    "filter": [
+                        "cjk_width",
+                        "lowercase",
+                        "asciifolding",
+                        "front_ngram"
+                    ],
+                    "tokenizer": "standard"
+                },
+                "q_prefix": {
+                    "filter": [
+                        "cjk_width",
+                        "lowercase",
+                        "asciifolding"
+                    ],
+                    "tokenizer": "standard"
+                }
+            }
+        }
+    },
+    "mappings": {
+        "properties": {
+            "type": {
+                "type": "keyword"
+            },
+            "artist_id": {
+                "type": "keyword"
+            },
+            "ranking": {
+                "type": "double"
+            },
+            "artist_name": {
+                "type": "text",
+                "analyzer": "standard",
+                "index_options": "offsets",
+                "fields": {
+                    "prefix": {
+                        "type": "text",
+                        "term_vector": "with_positions_offsets",
+                        "index_options": "docs",
+                        "analyzer": "i_prefix",
+                        "search_analyzer": "q_prefix"
+                    }
+                },
+                "position_increment_gap": 100
+            }
+        }
+    }
+}
+```
+
+now if we repeat the bulk indexing 4 documents and searching with prefix 's' we can find all four of the artist documents.
+
+```
+POST /content/_search
+{
+  "query": {
+    "multi_match": {
+      "query": "s",
+      "fields": [
+        "artist_name.prefix"
+      ]
+    }
+  }
+}
+```
 
 ## 3 popularity (ranking) based boosting
 
 ### 3.1 listen events 
 in order to update the rankings of artists and users' profile for personalized search results, we need to 
-+ store the listen events in temporary elasticsearch indices
++ store the listen events in temporary elasticsearch indices (listen-event-*)
 + process these events at some intervals e.g. hourly, half-daily, daily, weekly, etc. 
-+ update artist rakings
-+ update user profiles based on listening events
++ update artist rankings (content, artist-ranking-*)
++ update user profiles based on listening events (user-profile)
 
 #### 3.1.1 listen-event-* index template
 let's create an index template for listen-events so that each index inherits the field mappings and index settings. 

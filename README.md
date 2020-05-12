@@ -42,5 +42,43 @@ in order to list the existing indices in elastic search just run this command fr
 `GET /_cat/indices?v
 `
 
-## search as you type
- 
+## search as you type - analyzers
+describe the details of different analyzers and search with prefix 
+
+## popularity (ranking) based boosting
+
+### listen events 
+in order to update the rankings of artists and users' profile for personalized search results, we need to 
++ store the listen events in temporary elasticsearch indices
++ process these events at some intervals e.g. hourly, half-daily, daily, weekly, etc. 
++ update artist rakings
++ update user profiles based on listening events
+
+#### index template
+let's create an index template for listen-events so that each index inherits the field mappings and index settings. 
+
+`PUT _template/listen_events_template
+{
+  "index_patterns": ["listen-event*"],
+  "settings": {
+    "number_of_shards": 1
+  },
+  "mappings": {
+    "properties": {
+      "artist_id": {
+        "type": "keyword"
+      },
+      "song_id": {
+        "type": "keyword"
+      },
+      "user_id": {
+        "type": "keyword"
+      },
+      "timestamp": {
+        "type": "date",
+        "format": "date_hour_minute_second_millis"
+      }
+    }
+  }
+}
+`

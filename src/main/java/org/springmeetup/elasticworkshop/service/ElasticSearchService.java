@@ -16,6 +16,7 @@ import org.elasticsearch.action.search.SearchRequest;
 import org.elasticsearch.action.search.SearchResponse;
 import org.elasticsearch.client.RequestOptions;
 import org.elasticsearch.client.RestHighLevelClient;
+import org.elasticsearch.common.lucene.search.function.CombineFunction;
 import org.elasticsearch.common.lucene.search.function.FunctionScoreQuery;
 import org.elasticsearch.common.xcontent.XContentType;
 import org.elasticsearch.index.query.BoolQueryBuilder;
@@ -109,7 +110,8 @@ public class ElasticSearchService implements Constants {
 		}
 
 		FunctionScoreQueryBuilder functionScoreQueryBuilder = new FunctionScoreQueryBuilder(boolQueryBuilder, filterFunctionBuilders)
-				.scoreMode(FunctionScoreQuery.ScoreMode.SUM);
+				.scoreMode(FunctionScoreQuery.ScoreMode.SUM)
+				.boostMode(CombineFunction.SUM);
 
 		searchSourceBuilder.query(functionScoreQueryBuilder);
 		searchSourceBuilder.sort("_score", SortOrder.DESC);

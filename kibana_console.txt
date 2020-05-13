@@ -1,0 +1,296 @@
+GET /_cat/indices?v
+
+DELETE /listen-event-*
+DELETE /artist-ranking-*
+DELETE /content
+DELETE /user-profile
+
+# PART 1 - analyzers
+
+GET /content
+
+POST /content/_bulk
+{ "index" : {"_id" : "a1" } }
+{ "type": "ARTIST", "artist_id": "a1", "artist_name": "Sezen Aksu","ranking": null }
+{ "index" : {"_id" : "a2" } }
+{ "type": "ARTIST", "artist_id": "a2", "artist_name": "Selena Gomez","ranking": null }
+{ "index" : {"_id" : "a3" } }
+{ "type": "ARTIST", "artist_id": "a3", "artist_name": "Shakira","ranking": null }
+{ "index" : {"_id" : "a4" } }
+{ "type": "ARTIST", "artist_id": "a4", "artist_name": "Hélène Ségara","ranking": null }
+
+GET /content/_doc/a1
+
+POST /content/_search
+{
+  "query": {
+    "match_all": {}
+  }
+}
+
+POST /content/_search
+{
+  "query": {
+    "multi_match": {
+      "query": "s",
+      "fields": [
+        "artist_name^1.0",
+        "artist_name.prefix^1.0"
+      ]
+    }
+  }
+}
+
+POST _analyze
+{
+  "text": "Hélène Ségara it's !<>#"
+}
+
+POST _analyze
+{
+  "text": "Hélène Ségara it's !<>#",
+  "char_filter": [
+    {
+      "type": "pattern_replace",
+      "pattern": "[^\\s\\p{L}\\p{N}]",
+      "replacement": ""
+    }
+  ],
+  "tokenizer": "standard",
+  "filter": [
+    "lowercase",
+    "asciifolding",
+    {
+      "type": "edge_ngram",
+      "min_gram": "1",
+      "max_gram": "12"
+    }
+  ]
+}
+
+DELETE /content
+
+PUT /content
+{
+    "settings": {
+        "analysis": {
+            "filter": {
+                "front_ngram": {
+                    "type": "edge_ngram",
+                    "min_gram": "1",
+                    "max_gram": "12"
+                }
+            },
+            "analyzer": {
+                "i_prefix": {
+                    "filter": [
+                        "lowercase",
+                        "asciifolding",
+                        "front_ngram"
+                    ],
+                    "tokenizer": "standard"
+                },
+                "q_prefix": {
+                    "filter": [
+                        "lowercase",
+                        "asciifolding"
+                    ],
+                    "tokenizer": "standard"
+                }
+            }
+        }
+    },
+    "mappings": {
+        "properties": {
+            "type": {
+                "type": "keyword"
+            },
+            "artist_id": {
+                "type": "keyword"
+            },
+            "ranking": {
+                "type": "double"
+            },
+            "artist_name": {
+                "type": "text",
+                "analyzer": "standard",
+                "index_options": "offsets",
+                "fields": {
+                    "prefix": {
+                        "type": "text",
+                        "term_vector": "with_positions_offsets",
+                        "index_options": "docs",
+                        "analyzer": "i_prefix",
+                        "search_analyzer": "q_prefix"
+                    }
+                },
+                "position_increment_gap": 100
+            }
+        }
+    }
+}
+
+# PART 2 - ranking based boosting (event processing)
+GET /_cat/indices?v
+
+PUT _template/listen_events_template
+{
+  "index_patterns": ["listen-event*"],
+  "settings": {
+    "number_of_shards": 1
+  },
+  "mappings": {
+    "properties": {
+      "artist_id": {
+        "type": "keyword"
+      },
+      "user_id": {
+        "type": "keyword"
+      },
+      "timestamp": {
+        "type": "date",
+        "format": "date_hour_minute_second_millis"
+      }
+    }
+  }
+}
+
+PUT _template/artist_rankings_template
+{
+  "index_patterns": ["artist-ranking*"],
+  "settings": {
+    "number_of_shards": 1
+  },
+  "mappings": {
+    "properties": {
+      "artist_id": {
+        "type": "keyword"
+      },
+      "ranking": {
+        "type": "long"
+      }
+    }
+  }
+}
+
+## go to java spring project for the event processing details
+## post listen-events from postman through spring rest services
+GET /_cat/indices?v
+
+POST /listen-event-*/_search
+{
+  "query": {
+    "match_all": {}
+  }
+}
+
+
+## aggregate artists' rankings
+POST /listen-event-*/_search
+{
+  "size": 3,
+  "query": {
+    "match_all": {}
+  },
+  "aggs": {
+    "artists": {
+      "terms": {
+        "size": 1000,
+        "field": "artist_id"
+      }
+    }
+  }
+}
+
+### see modified artist rankings in content index
+POST /content/_search
+{
+  "query": {
+    "match_all": {}
+  }
+}
+
+### daily artist-ranking indices can be used for trending artist rankings
+POST /artist-ranking-*/_search
+{
+  "query": {
+    "match_all": {}
+  }
+}
+
+POST /content/_search
+{
+  "query": {
+    "function_score": {
+      "score_mode": "sum",
+      "boost_mode": "sum",
+      "query": {
+        "multi_match": {
+          "query": "s",
+          "fields": [
+            "artist_name.prefix^1"
+          ]
+        }
+      },
+      "functions": [
+        {
+          "script_score": {
+            "script": {
+              "source": "Math.max(_score * ((!doc['ranking'].empty ) ? Math.log(doc['ranking'].value) / Math.log(2) : 1)  - _score , 0)"
+            }
+          }
+        }
+      ]
+    }
+  }
+}
+
+
+# PART 3 - user profile based boosting
+
+# in part 2, user-profile index has also been maintained
+POST /user-profile/_search
+{
+  "query": {
+    "match_all": {}
+  }
+}
+
+
+## aggregate users with artists' rankings from listen-events
+POST /listen-event-*/_search
+{
+  "size": 3,
+  "query": {
+    "match_all": {}
+  },
+  "aggs": {
+    "artists": {
+      "terms": {
+        "size": 1000,
+        "field": "artist_id"
+      }
+    },
+    "users": {
+      "terms": {
+        "size": 1000,
+        "field": "user_id"
+      },
+      "aggs": {
+        "artists": {
+          "terms": {
+            "size": 1000,
+            "field": "artist_id"
+          }
+        }
+      }
+    }
+  }
+}
+
+## ElasticSearchService.java::searchArtists
+### post listen-events for different users and perform search requests for different users
+
+
+
+

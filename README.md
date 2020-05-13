@@ -39,9 +39,13 @@ in order to execute a specific request just click on the send request (play) but
 
 in order to list the existing indices in elastic search just run this command from kibana dev tools console
 
-`GET /_cat/indices?v
-`
 
+```
+GET /_cat/indices?v
+```
+
+refer to kibana_console.txt file for full set of requests used for this workshop
+ 
 ## 2 search as you type - analyzers
 
 ### 2.1 understanding analyzers 
@@ -54,7 +58,7 @@ POST _analyze
 }
 ```
 
-this will produce only two tokens : 
+this will produce only three tokens : 
 
 ```
 {
@@ -195,6 +199,7 @@ POST _analyze
   ]  
 }
 ```
+
 ### 2.2 index settings (analyzers) and field mappings 
 now we need to delete the index that has been created automatically in the previous step 
 
@@ -219,7 +224,6 @@ PUT /content
             "analyzer": {
                 "i_prefix": {
                     "filter": [
-                        "cjk_width",
                         "lowercase",
                         "asciifolding",
                         "front_ngram"
@@ -228,7 +232,6 @@ PUT /content
                 },
                 "q_prefix": {
                     "filter": [
-                        "cjk_width",
                         "lowercase",
                         "asciifolding"
                     ],
@@ -308,9 +311,6 @@ PUT _template/listen_events_template
       "artist_id": {
         "type": "keyword"
       },
-      "song_id": {
-        "type": "keyword"
-      },
       "user_id": {
         "type": "keyword"
       },
@@ -345,3 +345,31 @@ PUT _template/artist_rankings_template
   }
 }
 ```
+
+#### 3.1.3 save listen-events
+
+since this business logic requires partitioning listen-events in periodic indices, we should use spring rest application for managing listen events
+
+```
+curl -X POST \
+  http://localhost:8080/event/listen-event \
+  -H 'Content-Type: application/json' \
+  -d '{
+	"user_id": "user1",
+	"artist_id": "a1"
+}'
+```
+
+posting these listen-event records will trigger auto indexing events and updating artist rankings, as well as user profiles
+
+once the artist rankings are updated, search results will be boosted depending on the artist ranking. have a look at following classes
+
++ ElasticSearchService.java
++ EventProcessingService.java
+
+following request will perform search operations with ranking boost algorithm
+```
+curl -X GET \
+  'http://localhost:8080/search/artist?q=s&userid=user1&from=0&size=10' 
+```
+

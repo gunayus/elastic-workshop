@@ -1,9 +1,11 @@
 GET /_cat/indices?v
 
 DELETE /listen-event-*
-DELETE /artist-ranking-*
 DELETE /content
 DELETE /user-profile
+
+# I will keep this to show daily trends
+DELETE /artist-ranking-*
 
 # PART 1 - analyzers
 
@@ -28,6 +30,15 @@ POST /content/_search
   }
 }
 
+## demonstrate multi_match query with how the operator and fuzziness arguments effect
+POST /content/_search
+{
+  "query": {
+    "multi_match": {
+    }
+  }
+}
+
 POST /content/_search
 {
   "query": {
@@ -41,14 +52,16 @@ POST /content/_search
   }
 }
 
+## demonstrate analyzers, char filters, token filters, etc.
+
 POST _analyze
 {
-  "text": "Hélène Ségara it's !<>#"
+  "text": "Hélène Ségara it's s.a.m.p.l.e !<># text"
 }
 
 POST _analyze
 {
-  "text": "Hélène Ségara it's !<>#",
+  "text": "Hélène Ségara it's s.a.m.p.l.e !<># text",
   "char_filter": [
     {
       "type": "pattern_replace",

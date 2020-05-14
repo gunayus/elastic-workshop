@@ -46,7 +46,8 @@ in order to list the existing indices in elastic search just run this command fr
 GET /_cat/indices?v
 ```
 
-refer to kibana_console.txt file for full set of requests used for this workshop. you can copy/paste the content of this file to your Kibana dev tools console and run the requests accordingly.
+refer to [kibana_console.txt](../blob/master/kibana_console.txt)
+ file for full set of requests used for this workshop. you can copy/paste the content of this file to your Kibana dev tools console and run the requests accordingly.
  
 ## 2 search as you type - analyzers
 

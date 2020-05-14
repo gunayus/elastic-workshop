@@ -57,7 +57,7 @@ public class ElasticSearchService implements Constants {
 	 * @param size
 	 * @return
 	 */
-	public List<ArtistDocument> searchArtists(String queryString, String userId, int from, int size) {
+	public List<ArtistDocument> searchArtists(String queryString, String userId, boolean includeRanking, boolean includeUserProfile, int from, int size) {
 		SearchRequest searchRequest = new SearchRequest(CONTENT_INDEX_NAME);
 		SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
 		searchRequest.source(searchSourceBuilder);
@@ -84,24 +84,28 @@ public class ElasticSearchService implements Constants {
 		List<ScriptScoreFunctionBuilder> scriptScoreFunctionBuilders = new ArrayList<>();
 
 		// ranking based score function builder
-		scriptScoreFunctionBuilders.add(ScoreFunctionBuilders.scriptFunction(
-				"Math.max(_score * ((!doc['ranking'].empty ) ? Math.log(doc['ranking'].value) / Math.log(2) : 1)  - _score , 0)"
-		));
+		if (includeRanking) {
+			scriptScoreFunctionBuilders.add(ScoreFunctionBuilders.scriptFunction(
+					"Math.max(_score * ((!doc['ranking'].empty ) ? Math.log(doc['ranking'].value) / Math.log(2) : 1)  - _score , 0)"
+			));
+		}
 
 		// user profile based score function builder
-		if (userProfile != null && ! userProfile.getArtistRankingSet().isEmpty()) {
-			String artistRankBooster = "";
-			for (ArtistRanking artistRanking : userProfile.getArtistRankingSet()) {
-				artistRankBooster += (artistRankBooster.isEmpty() ? "" : " * ") +
-						String.format("((!doc['artist_id'].empty &&  doc['artist_id'].value == '%s') ? %f : 1)",
-								artistRanking.getArtistId(),
-								log2(artistRanking.getRanking()));
+		if (includeUserProfile) {
+			if (userProfile != null && !userProfile.getArtistRankingSet().isEmpty()) {
+				String artistRankBooster = "";
+				for (ArtistRanking artistRanking : userProfile.getArtistRankingSet()) {
+					artistRankBooster += (artistRankBooster.isEmpty() ? "" : " * ") +
+							String.format("((!doc['artist_id'].empty &&  doc['artist_id'].value == '%s') ? %f : 1)",
+									artistRanking.getArtistId(),
+									log2(artistRanking.getRanking()));
+				}
+
+				scriptScoreFunctionBuilders.add(ScoreFunctionBuilders.scriptFunction(
+						"Math.max(_score * " + artistRankBooster + " - _score , 0)"
+				));
+
 			}
-
-			scriptScoreFunctionBuilders.add(ScoreFunctionBuilders.scriptFunction(
-					"Math.max(_score * " + artistRankBooster + " - _score , 0)"
-			));
-
 		}
 		
 		FunctionScoreQueryBuilder.FilterFunctionBuilder[] filterFunctionBuilders = new FunctionScoreQueryBuilder.FilterFunctionBuilder[scriptScoreFunctionBuilders.size()];

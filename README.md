@@ -5,6 +5,8 @@ This workshop aims to share the knowledge and the experience which is gained in 
 
 Elasticsearch is used to index artist, song, album, playlist metadata providing full text search capabilities as well as popularity and personal behaviour based scoring functionality so that more popular and more relevant results are boosted in the search results for individual users.
 
+## 1 introduction
+
 ## 1.1 pre-requisites
 + elastic search 7.x +
 + kibana 7.x +
@@ -360,6 +362,8 @@ curl -X POST \
 }'
 ```
 
+send as many requests as you wish by modifying the artist_id so that artists get different rankings. 
+
 posting these listen-event records will trigger auto indexing events and updating artist rankings, as well as user profiles
 
 once the artist rankings are updated, search results will be boosted depending on the artist ranking. have a look at following classes
@@ -370,6 +374,48 @@ once the artist rankings are updated, search results will be boosted depending o
 following request will perform search operations with ranking boost algorithm
 ```
 curl -X GET \
-  'http://localhost:8080/search/artist?q=s&userid=user1&from=0&size=10' 
+  'http://localhost:8080/search/artist?q=s&userid=user1&includeRanking=true&includeUserProfile=false&from=0&size=10' 
+```
+
+## 4 user-profile based boosting
+
+### 3.1 listen events 
+the listen events are used to define the users' profiles. if a user listens to songs from different artists, the user profile is updated with the number of times the user has listened to that artist. these numbers are used to boost the search results so that each user gets different boosted results depending on their listening history. 
+
++ ElasticSearchService.java
++ EventProcessingService.java
+
+send following requests couple of times so that both users get different profiles. 
+
+```
+curl -X POST \
+  http://localhost:8080/event/listen-event \
+  -H 'Content-Type: application/json' \
+  -d '{
+	"user_id": "user1",
+	"artist_id": "a1"
+}'
+```
+
+```
+curl -X POST \
+  http://localhost:8080/event/listen-event \
+  -H 'Content-Type: application/json' \
+  -d '{
+	"user_id": "user2",
+	"artist_id": "a2"
+}'
+```
+
+following requests will return different search results, user1 gets artist1, user2 gets artist2 listed at top respectively
+
+```
+curl -X GET \
+  'http://localhost:8080/search/artist?q=s&userid=user1&includeRanking=false&includeUserProfile=true&from=0&size=10'
+```
+
+```
+curl -X GET \
+  'http://localhost:8080/search/artist?q=s&userid=user2&includeRanking=false&includeUserProfile=true&from=0&size=10'
 ```
 

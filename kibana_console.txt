@@ -292,5 +292,31 @@ POST /listen-event-*/_search
 ### post listen-events for different users and perform search requests for different users
 
 
+POST /content/_search
+{
+  "query": {
+    "function_score": {
+      "score_mode": "sum",
+      "boost_mode": "sum",
+      "query": {
+        "multi_match": {
+          "query": "s",
+          "fields": [
+            "artist_name.prefix^1"
+          ]
+        }
+      },
+      "functions": [
+        {
+          "script_score": {
+            "script": {
+              "source": "Math.max(_score * ((!doc['artist_id'].empty &&  doc['artist_id'].value == 'a1') ? Math.log(128) / Math.log(2) : 1) * ((!doc['artist_id'].empty &&  doc['artist_id'].value == 'a2') ? Math.log(16) / Math.log(2) : 1)  - _score , 0)"
+            }
+          }
+        }
+      ]
+    }
+  }
+}
 
 

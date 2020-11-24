@@ -22,10 +22,13 @@ import org.elasticsearch.common.xcontent.XContentType;
 import org.elasticsearch.index.query.BoolQueryBuilder;
 import org.elasticsearch.index.query.MultiMatchQueryBuilder;
 import org.elasticsearch.index.query.Operator;
+import org.elasticsearch.index.query.TermsQueryBuilder;
 import org.elasticsearch.index.query.functionscore.FunctionScoreQueryBuilder;
 import org.elasticsearch.index.query.functionscore.ScoreFunctionBuilders;
 import org.elasticsearch.index.query.functionscore.ScriptScoreFunctionBuilder;
 import org.elasticsearch.rest.RestStatus;
+import org.elasticsearch.script.Script;
+import org.elasticsearch.script.ScriptType;
 import org.elasticsearch.search.SearchHit;
 import org.elasticsearch.search.builder.SearchSourceBuilder;
 import org.elasticsearch.search.sort.SortOrder;
@@ -36,7 +39,9 @@ import org.springmeetup.elasticworkshop.model.UserProfile;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
@@ -81,39 +86,49 @@ public class ElasticSearchService implements Constants {
 				)
 				.minimumShouldMatch(1);
 
-		List<ScriptScoreFunctionBuilder> scriptScoreFunctionBuilders = new ArrayList<>();
+		List<FunctionScoreQueryBuilder.FilterFunctionBuilder> scriptScoreFunctionBuilders = new ArrayList<>();
 
 		// ranking based score function builder
 		if (includeRanking) {
-			scriptScoreFunctionBuilders.add(ScoreFunctionBuilders.scriptFunction(
-					"Math.max(_score * ((!doc['ranking'].empty ) ? Math.log(doc['ranking'].value) / Math.log(2) : 1)  - _score , 0)"
-			));
+			scriptScoreFunctionBuilders.add(
+					new FunctionScoreQueryBuilder.FilterFunctionBuilder(
+							ScoreFunctionBuilders.scriptFunction(
+									"Math.max(_score * ((!doc['ranking'].empty ) ? Math.log(doc['ranking'].value) / Math.log(2) : 1)  - _score , 0)"
+							)));
 		}
 
 		// user profile based score function builder
 		if (includeUserProfile) {
 			if (userProfile != null && !userProfile.getArtistRankingSet().isEmpty()) {
+				List<String> artistIdList = new ArrayList<>();
+				Map<String, Float> artistIdBoostFactorMap = new HashMap<>();
+
 				String artistRankBooster = "";
 				for (ArtistRanking artistRanking : userProfile.getArtistRankingSet()) {
-					artistRankBooster += (artistRankBooster.isEmpty() ? "" : " * ") +
-							String.format("((!doc['artist_id'].empty &&  doc['artist_id'].value == '%s') ? %f : 1)",
-									artistRanking.getArtistId(),
-									log2(artistRanking.getRanking()));
+					String artistId = artistRanking.getArtistId();
+					artistIdList.add(artistId);
+
+					float boostFactor = (artistRanking.getRanking() <= 2 ? 1 : log2(artistRanking.getRanking()));
+					artistIdBoostFactorMap.put(artistId, boostFactor);
+
 				}
 
-				scriptScoreFunctionBuilders.add(ScoreFunctionBuilders.scriptFunction(
-						"Math.max(_score * " + artistRankBooster + " - _score , 0)"
-				));
+				String scriptStr = "Math.max(_score * params.boosts.get(doc['artist_id'].value) - _score , 0)";
+				Map<String, Object> params = new HashMap<>();
+				params.put("boosts", artistIdBoostFactorMap);
+
+				Script script =  new Script(ScriptType.INLINE, "painless", scriptStr, params);
+
+				scriptScoreFunctionBuilders.add(
+						new FunctionScoreQueryBuilder.FilterFunctionBuilder(
+								new TermsQueryBuilder("artist_id", artistIdList),
+								ScoreFunctionBuilders.scriptFunction(script)));
 
 			}
 		}
-		
-		FunctionScoreQueryBuilder.FilterFunctionBuilder[] filterFunctionBuilders = new FunctionScoreQueryBuilder.FilterFunctionBuilder[scriptScoreFunctionBuilders.size()];
-		for (int i = 0; i < scriptScoreFunctionBuilders.size(); i++) {
-			filterFunctionBuilders[i] = new FunctionScoreQueryBuilder.FilterFunctionBuilder(scriptScoreFunctionBuilders.get(i));
-		}
 
-		FunctionScoreQueryBuilder functionScoreQueryBuilder = new FunctionScoreQueryBuilder(boolQueryBuilder, filterFunctionBuilders)
+		FunctionScoreQueryBuilder.FilterFunctionBuilder[] filterFunctionBuilderArray = scriptScoreFunctionBuilders.toArray(new FunctionScoreQueryBuilder.FilterFunctionBuilder[0]);
+		FunctionScoreQueryBuilder functionScoreQueryBuilder = new FunctionScoreQueryBuilder(boolQueryBuilder, filterFunctionBuilderArray)
 				.scoreMode(FunctionScoreQuery.ScoreMode.SUM)
 				.boostMode(CombineFunction.SUM);
 

@@ -420,3 +420,6 @@ curl -X GET \
   'http://localhost:8080/search/artist?q=s&userid=user2&includeRanking=false&includeUserProfile=true&from=0&size=10'
 ```
 
+```
+curl -XPOST "http://localhost:9200/content/_search" -H 'Content-Type: application/json' -d'{  "query": {    "function_score": {      "query": {        "bool": {          "should": [            {              "multi_match": {                "query": "s",                "fields": [                  "artist_name^5",                  "artist_name.prefix^1"                ]              }            }          ]        }      },      "functions": [        {          "script_score": {            "script": "_score * doc['\''ranking'\''].value"          }        },        {          "filter": {            "terms": {              "artist_id": [                "a1",                "a2"              ]            }          },           "script_score": {            "script": {              "source": "_score * params.boosts.get(doc['\''artist_id'\''].value)",               "params": {                "boosts": {                  "a1": 5.0,                  "a2": 8.0                }              }            }          }        }      ]    }  }}'
+```

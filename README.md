@@ -421,7 +421,7 @@ curl -X GET \
 ```
 
 ```
-curl -XPOST "http://localhost:9200/content/_search" -H 'Content-Type: application/json' -d'
+POST /content/_search
 {
   "query": {
     "function_score": {

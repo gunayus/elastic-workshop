@@ -96,13 +96,13 @@ having observed that, let's index 4 artist documents in 'content' index
 ```
 POST /content/_bulk
 { "index" : {"_id" : "a1" } }
-{ "type": "ARTIST", "artist_id": "a1", "artist_name": "Sezen Aksu","ranking": null }
+{ "type": "ARTIST", "artist_id": "a1", "artist_name": "Sezen Aksu","ranking": 1000 }
 { "index" : {"_id" : "a2" } }
-{ "type": "ARTIST", "artist_id": "a2", "artist_name": "Selena Gomez","ranking": null }
+{ "type": "ARTIST", "artist_id": "a2", "artist_name": "Selena Gomez","ranking": 100 }
 { "index" : {"_id" : "a3" } }
-{ "type": "ARTIST", "artist_id": "a3", "artist_name": "Shakira","ranking": null }
+{ "type": "ARTIST", "artist_id": "a3", "artist_name": "Shakira","ranking": 10 }
 { "index" : {"_id" : "a4" } }
-{ "type": "ARTIST", "artist_id": "a4", "artist_name": "Hélène Ségara","ranking": null }
+{ "type": "ARTIST", "artist_id": "a4", "artist_name": "Hélène Ségara","ranking": 1 }
 ```
 
 let's try to search these artists with the prefix 's' because all of them have one word starting with 's'
@@ -355,7 +355,7 @@ since this business logic requires partitioning listen-events in periodic indice
 
 ```
 curl -X POST \
-  http://localhost:8080/event/listen-event \
+  http://localhost:8080/event/listen-event?eventCount=10 \
   -H 'Content-Type: application/json' \
   -d '{
 	"user_id": "user1",
@@ -390,7 +390,7 @@ send following requests couple of times so that both users get different profile
 
 ```
 curl -X POST \
-  http://localhost:8080/event/listen-event \
+  http://localhost:8080/event/listen-event?eventCount=10 \
   -H 'Content-Type: application/json' \
   -d '{
 	"user_id": "user1",
@@ -423,52 +423,54 @@ curl -X GET \
 ```
 POST /content/_search
 {
+  "from": 0,
+  "size": 10,
   "query": {
     "function_score": {
       "query": {
-        "bool": {
-          "should": [
-            {
-              "multi_match": {
-                "query": "s",
-                "fields": [
-                  "artist_name^5",
-                  "artist_name.prefix^1"
-                ]
-              }
-            }
+        "multi_match": {
+          "query": "s",
+          "fields": [
+            "artist_name.prefix"
           ]
         }
       },
       "functions": [
         {
-          "script_score": {
-            "script": "_score * doc['\''ranking'\''].value"
-          }
-        },
-        {
           "filter": {
             "terms": {
               "artist_id": [
-                "a1",
-                "a2"
+                "a4",
+                "a3"
               ]
             }
           },
           "script_score": {
             "script": {
-              "source": "_score * params.boosts.get(doc['\''artist_id'\''].value)",
+              "source": "params.boosts.get(doc[params.artistIdFieldName].value)",
+              "lang": "painless",
               "params": {
+                "artistIdFieldName": "artist_id",
                 "boosts": {
-                  "a1": 5.0,
-                  "a2": 8.0
+                  "a4": 5,
+                  "a3": 2
                 }
               }
             }
           }
         }
-      ]
+      ],
+      "boost": 1,
+      "boost_mode": "multiply",
+      "score_mode": "multiply"
     }
-  }
-}'
+  },
+  "sort": [
+    {
+      "_score": {
+        "order": "desc"
+      }
+    }
+  ]
+}
 ```

@@ -1,41 +1,34 @@
-GET /_cat/indices?v
+GET /_cat/indices
+GET /_cat/aliases
+GET /_cluster/state
+GET /_cluster/stats/nodes/all
+GET /_cat/health
+GET /_cat/nodes?v
+GET /_cluster/pending_tasks
 
-DELETE /listen-event-*
 DELETE /content
-DELETE /user-profile
+DELETE /listen-event*
+DELETE /artist-ranking*
+DELETE /user-profile*
 
-# I will keep this to show daily trends
-DELETE /artist-ranking-*
-
-# PART 1 - analyzers
-
-GET /content
+#part1 - find first 
 
 POST /content/_bulk
 { "index" : {"_id" : "a1" } }
-{ "type": "ARTIST", "artist_id": "a1", "artist_name": "Sezen Aksu","ranking": null }
+{ "type": "ARTIST", "artist_id": "a1", "artist_name": "Sezen Aksu","ranking": 1000 }
 { "index" : {"_id" : "a2" } }
-{ "type": "ARTIST", "artist_id": "a2", "artist_name": "Selena Gomez","ranking": null }
+{ "type": "ARTIST", "artist_id": "a2", "artist_name": "Selena Gomez","ranking": 100 }
 { "index" : {"_id" : "a3" } }
-{ "type": "ARTIST", "artist_id": "a3", "artist_name": "Shakira","ranking": null }
+{ "type": "ARTIST", "artist_id": "a3", "artist_name": "Shakira","ranking": 10 }
 { "index" : {"_id" : "a4" } }
-{ "type": "ARTIST", "artist_id": "a4", "artist_name": "Hélène Ségara","ranking": null }
+{ "type": "ARTIST", "artist_id": "a4", "artist_name": "Hélène Ségara","ranking": 1 }
 
-GET /content/_doc/a1
+
 
 POST /content/_search
 {
   "query": {
     "match_all": {}
-  }
-}
-
-## demonstrate multi_match query with how the operator and fuzziness arguments effect
-POST /content/_search
-{
-  "query": {
-    "multi_match": {
-    }
   }
 }
 
@@ -45,23 +38,22 @@ POST /content/_search
     "multi_match": {
       "query": "s",
       "fields": [
-        "artist_name^1.0",
-        "artist_name.prefix^1.0"
+        "artist_name"
       ]
     }
   }
 }
 
-## demonstrate analyzers, char filters, token filters, etc.
+# special thanks to AppSearch : https://www.elastic.co/app-search/
 
-POST _analyze
+POST _analyze 
 {
-  "text": "Hélène Ségara it's s.a.m.p.l.e !<># text"
+  "text": "Hélène Ségara it's !<>#"
 }
 
-POST _analyze
+POST _analyze 
 {
-  "text": "Hélène Ségara it's s.a.m.p.l.e !<># text",
+  "text": "Hélène Ségara it's !<>#",
   "char_filter": [
     {
       "type": "pattern_replace",
@@ -69,7 +61,6 @@ POST _analyze
       "replacement": ""
     }
   ],
-  "tokenizer": "standard",
   "filter": [
     "lowercase",
     "asciifolding",
@@ -78,258 +69,262 @@ POST _analyze
       "min_gram": "1",
       "max_gram": "12"
     }
-  ]
+  ], 
+  "tokenizer": "standard"
+}
+
+POST _analyze 
+{
+  "text": "Hélène Ségara it's !<>#",
+  "char_filter": [
+    {
+      "type": "pattern_replace",
+      "pattern": "[^\\s\\p{L}\\p{N}]",
+      "replacement": ""
+    }
+  ], 
+  "filter": [
+    "lowercase",
+    "asciifolding",
+    {
+      "type": "edge_ngram",
+      "min_gram": "1",
+      "max_gram": "12"
+    }
+  ],
+  "tokenizer": "standard"
 }
 
 DELETE /content
 
 PUT /content
 {
-    "settings": {
-        "analysis": {
-            "filter": {
-                "front_ngram": {
-                    "type": "edge_ngram",
-                    "min_gram": "1",
-                    "max_gram": "12"
-                }
-            },
-            "analyzer": {
-                "i_prefix": {
-                    "filter": [
-                        "lowercase",
-                        "asciifolding",
-                        "front_ngram"
-                    ],
-                    "tokenizer": "standard"
-                },
-                "q_prefix": {
-                    "filter": [
-                        "lowercase",
-                        "asciifolding"
-                    ],
-                    "tokenizer": "standard"
-                }
-            }
-        }
-    },
-    "mappings": {
-        "properties": {
-            "type": {
-                "type": "keyword"
-            },
-            "artist_id": {
-                "type": "keyword"
-            },
-            "ranking": {
-                "type": "double"
-            },
-            "artist_name": {
-                "type": "text",
-                "analyzer": "standard",
-                "index_options": "offsets",
-                "fields": {
-                    "prefix": {
-                        "type": "text",
-                        "term_vector": "with_positions_offsets",
-                        "index_options": "docs",
-                        "analyzer": "i_prefix",
-                        "search_analyzer": "q_prefix"
-                    }
-                },
-                "position_increment_gap": 100
-            }
-        }
-    }
-}
-
-# PART 2 - ranking based boosting (event processing)
-GET /_cat/indices?v
-
-PUT _template/listen_events_template
-{
-  "index_patterns": ["listen-event*"],
   "settings": {
-    "number_of_shards": 1
-  },
-  "mappings": {
-    "properties": {
-      "artist_id": {
-        "type": "keyword"
+    "analysis": {
+      "char_filter": {
+        "specialchar_removal_charfilter": {
+          "type": "pattern_replace",
+          "pattern": "[^\\s\\p{L}\\p{N}]",
+          "replacement": ""
+        }
       },
-      "user_id": {
-        "type": "keyword"
+      "filter": {
+        "front_ngram": {
+          "type": "edge_ngram",
+          "min_gram": "1",
+          "max_gram": "12"
+        }
       },
-      "timestamp": {
-        "type": "date",
-        "format": "date_hour_minute_second_millis"
+      "analyzer": {
+        "i_prefix": {
+          "char_filter": [
+            "specialchar_removal_charfilter"
+          ],
+          "filter": [
+            "lowercase",
+            "asciifolding",
+            "front_ngram"
+          ],
+          "tokenizer": "standard"
+        },
+        "q_prefix": {
+          "char_filter": [
+            "specialchar_removal_charfilter"
+          ],
+          "filter": [
+            "lowercase",
+            "asciifolding"
+          ],
+          "tokenizer": "standard"
+        }
       }
     }
-  }
-}
-
-PUT _template/artist_rankings_template
-{
-  "index_patterns": ["artist-ranking*"],
-  "settings": {
-    "number_of_shards": 1
   },
   "mappings": {
     "properties": {
+      "type": {
+        "type": "keyword"
+      },
       "artist_id": {
         "type": "keyword"
       },
       "ranking": {
-        "type": "long"
-      }
-    }
-  }
-}
-
-## go to java spring project for the event processing details
-## post listen-events from postman through spring rest services
-GET /_cat/indices?v
-
-POST /listen-event-*/_search
-{
-  "query": {
-    "match_all": {}
-  }
-}
-
-
-## aggregate artists' rankings
-POST /listen-event-*/_search
-{
-  "size": 3,
-  "query": {
-    "match_all": {}
-  },
-  "aggs": {
-    "artists": {
-      "terms": {
-        "size": 1000,
-        "field": "artist_id"
-      }
-    }
-  }
-}
-
-### see modified artist rankings in content index
-POST /content/_search
-{
-  "query": {
-    "match_all": {}
-  }
-}
-
-### daily artist-ranking indices can be used for trending artist rankings
-POST /artist-ranking-*/_search
-{
-  "query": {
-    "match_all": {}
-  }
-}
-
-POST /content/_search
-{
-  "query": {
-    "function_score": {
-      "score_mode": "sum",
-      "boost_mode": "sum",
-      "query": {
-        "multi_match": {
-          "query": "s",
-          "fields": [
-            "artist_name.prefix^1"
-          ]
-        }
+        "type": "double"
       },
-      "functions": [
-        {
-          "script_score": {
-            "script": {
-              "source": "Math.max(_score * ((!doc['ranking'].empty ) ? Math.log(doc['ranking'].value) / Math.log(2) : 1)  - _score , 0)"
-            }
+      "artist_name": {
+        "type": "text",
+        "analyzer": "standard",
+        "index_options": "offsets",
+        "fields": {
+          "prefix": {
+            "type": "text",
+            "term_vector": "with_positions_offsets",
+            "index_options": "docs",
+            "analyzer": "i_prefix",
+            "search_analyzer": "q_prefix"
           }
-        }
+        },
+        "position_increment_gap": 100
+      }
+    }
+  }
+}
+
+POST /content/_bulk
+{ "index" : {"_id" : "a1" } }
+{ "type": "ARTIST", "artist_id": "a1", "artist_name": "Sezen Aksu","ranking": 1000 }
+{ "index" : {"_id" : "a2" } }
+{ "type": "ARTIST", "artist_id": "a2", "artist_name": "Selena Gomez","ranking": 100 }
+{ "index" : {"_id" : "a3" } }
+{ "type": "ARTIST", "artist_id": "a3", "artist_name": "Shakira","ranking": 10 }
+{ "index" : {"_id" : "a4" } }
+{ "type": "ARTIST", "artist_id": "a4", "artist_name": "Hélène Ségara","ranking": 1 }
+
+
+
+POST /content/_search
+{
+  "query": {
+    "multi_match": {
+      "query": "sez",
+      "fuzziness": 1, 
+      "fields": [
+        "artist_name.prefix"
       ]
     }
   }
 }
 
+#part 2 - boost by popularity (ranking)
 
-# PART 3 - user profile based boosting
+POST /content/_search
+{
+  "query": {
+    "multi_match": {
+      "query": "s",
+      "fields": [
+        "artist_name.prefix"
+      ]
+    }
+  }
+}
 
-# in part 2, user-profile index has also been maintained
+POST /content/_search
+{
+  "from": 0,
+  "size": 10,
+  "query": {
+    "function_score": {
+      "query": {
+        "multi_match": {
+          "query": "s",
+          "fields": [
+            "artist_name.prefix"
+          ]
+        }
+      },
+      "functions": [
+        {
+          "filter": {
+            "match_all": {
+              "boost": 1
+            }
+          },
+          "script_score": {
+            "script": {
+              "source": "Math.max(((!doc['ranking'].empty ) ? Math.log10(doc['ranking'].value) : 1), 1)",
+              "lang": "painless"
+            }
+          }
+        }
+      ],
+      "boost": 1, 
+      "boost_mode": "multiply",
+      "score_mode": "multiply"
+    }
+  },
+  "sort": [
+    {
+      "_score": {
+        "order": "desc"
+      }
+    }
+  ]
+}
+
+
+#part 3 - boost by user behavior (listened artists)
+
+
 POST /user-profile/_search
-{
-  "query": {
-    "match_all": {}
-  }
-}
 
-
-## aggregate users with artists' rankings from listen-events
-POST /listen-event-*/_search
-{
-  "size": 3,
-  "query": {
-    "match_all": {}
-  },
-  "aggs": {
-    "artists": {
-      "terms": {
-        "size": 1000,
-        "field": "artist_id"
-      }
-    },
-    "users": {
-      "terms": {
-        "size": 1000,
-        "field": "user_id"
-      },
-      "aggs": {
-        "artists": {
-          "terms": {
-            "size": 1000,
-            "field": "artist_id"
-          }
-        }
-      }
-    }
-  }
-}
-
-## ElasticSearchService.java::searchArtists
-### post listen-events for different users and perform search requests for different users
-
+POST /listen-event-2021-02*/_search
 
 POST /content/_search
 {
   "query": {
-    "function_score": {
-      "score_mode": "sum",
-      "boost_mode": "sum",
-      "query": {
-        "multi_match": {
-          "query": "s",
-          "fields": [
-            "artist_name.prefix^1"
-          ]
-        }
-      },
-      "functions": [
-        {
-          "script_score": {
-            "script": {
-              "source": "Math.max(_score * ((!doc['artist_id'].empty &&  doc['artist_id'].value == 'a1') ? Math.log(128) / Math.log(2) : 1) * ((!doc['artist_id'].empty &&  doc['artist_id'].value == 'a2') ? Math.log(16) / Math.log(2) : 1)  - _score , 0)"
-            }
-          }
-        }
+    "multi_match": {
+      "query": "s",
+      "fields": [
+        "artist_name.prefix"
       ]
     }
   }
 }
 
+POST /content/_search
+{
+  "from": 0,
+  "size": 10,
+  "query": {
+    "function_score": {
+      "query": {
+        "multi_match": {
+          "query": "s",
+          "fields": [
+            "artist_name.prefix"
+          ]
+        }
+      },
+      "functions": [
+        {
+          "filter": {
+            "terms": {
+              "artist_id": [
+                "a4",
+                "a3"
+              ]
+            }
+          },
+          "script_score": {
+            "script": {
+              "source": "params.boosts.get(doc[params.artistIdFieldName].value)",
+              "lang": "painless",
+              "params": {
+                "artistIdFieldName": "artist_id",
+                "boosts": {
+                  "a4": 5,
+                  "a3": 2
+                }
+              }
+            }
+          }
+        }
+      ],
+      "boost": 1,
+      "boost_mode": "multiply",
+      "score_mode": "multiply"
+    }
+  },
+  "sort": [
+    {
+      "_score": {
+        "order": "desc"
+      }
+    }
+  ]
+}
 
+POST /listen-event-*/_search
+
+POST /user-profile/_search

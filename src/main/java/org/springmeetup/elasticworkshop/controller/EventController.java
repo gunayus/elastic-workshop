@@ -1,11 +1,7 @@
 package org.springmeetup.elasticworkshop.controller;
 
 import lombok.RequiredArgsConstructor;
-import org.elasticsearch.action.index.IndexResponse;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 import org.springmeetup.elasticworkshop.model.ListenEvent;
 import org.springmeetup.elasticworkshop.service.EventProcessingService;
 
@@ -19,12 +15,15 @@ public class EventController {
 	private final EventProcessingService eventProcessingService;
 
 	@PostMapping("/listen-event")
-	public IndexResponse saveListenEvent(@RequestBody ListenEvent listenEvent) {
+	public void saveListenEvent(@RequestBody ListenEvent listenEvent,
+	                            @RequestParam(value = "eventCount", defaultValue = "1") int eventCount) {
 		if (listenEvent.getTimestamp() == null) {
 			listenEvent.setTimestamp(LocalDateTime.now());
 		}
 
-		return eventProcessingService.saveListenEvent(listenEvent);
+		for (int i = 0; i < eventCount; i++) {
+			eventProcessingService.saveListenEvent(listenEvent);
+		}
 	}
 
 }

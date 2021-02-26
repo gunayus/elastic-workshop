@@ -25,7 +25,6 @@ import org.elasticsearch.index.query.Operator;
 import org.elasticsearch.index.query.TermsQueryBuilder;
 import org.elasticsearch.index.query.functionscore.FunctionScoreQueryBuilder;
 import org.elasticsearch.index.query.functionscore.ScoreFunctionBuilders;
-import org.elasticsearch.index.query.functionscore.ScriptScoreFunctionBuilder;
 import org.elasticsearch.rest.RestStatus;
 import org.elasticsearch.script.Script;
 import org.elasticsearch.script.ScriptType;
@@ -68,15 +67,15 @@ public class ElasticSearchService implements Constants {
 		searchRequest.source(searchSourceBuilder);
 
 		UserProfile userProfile = getDocument(USER_PROFILE_INDEX_NAME, userId, UserProfile.class);
-		
+
 		// full text search - query string
 		BoolQueryBuilder boolQueryBuilder = new BoolQueryBuilder()
 				.should(new MultiMatchQueryBuilder(queryString)
-							.field("artist_name", 2.0f) //artist_name token matches have double boost factor
-							.field("artist_name.prefix", 1.0f)
-							.type(MultiMatchQueryBuilder.Type.BEST_FIELDS)
-							.operator(Operator.AND)
-							.fuzziness("0")
+						.field("artist_name", 2.0f) //artist_name token matches have double boost factor
+						.field("artist_name.prefix", 1.0f)
+						.type(MultiMatchQueryBuilder.Type.BEST_FIELDS)
+						.operator(Operator.AND)
+						.fuzziness("0")
 				)
 				.should(new MultiMatchQueryBuilder(queryString)
 						.field("artist_name.prefix", 0.5f) //artist_name token matches have double boost factor
@@ -86,15 +85,15 @@ public class ElasticSearchService implements Constants {
 				)
 				.minimumShouldMatch(1);
 
-		List<FunctionScoreQueryBuilder.FilterFunctionBuilder> scriptScoreFunctionBuilders = new ArrayList<>();
+		List<FunctionScoreQueryBuilder.FilterFunctionBuilder> filterFunctionBuilderList = new ArrayList<>();
 
 		// ranking based score function builder
 		if (includeRanking) {
-			scriptScoreFunctionBuilders.add(
+			filterFunctionBuilderList.add(
 					new FunctionScoreQueryBuilder.FilterFunctionBuilder(
-							ScoreFunctionBuilders.scriptFunction(
-									"Math.max(_score * ((!doc['ranking'].empty ) ? Math.log(doc['ranking'].value) / Math.log(2) : 1)  - _score , 0)"
-							)));
+							ScoreFunctionBuilders.scriptFunction("Math.max(((!doc['ranking'].empty ) ? Math.log10(doc['ranking'].value) : 1), 1)")
+					)
+			);
 		}
 
 		// user profile based score function builder
@@ -102,40 +101,42 @@ public class ElasticSearchService implements Constants {
 			if (userProfile != null && !userProfile.getArtistRankingSet().isEmpty()) {
 				List<String> artistIdList = new ArrayList<>();
 				Map<String, Float> artistIdBoostFactorMap = new HashMap<>();
-
-				String artistRankBooster = "";
 				for (ArtistRanking artistRanking : userProfile.getArtistRankingSet()) {
-					String artistId = artistRanking.getArtistId();
-					artistIdList.add(artistId);
-
-					float boostFactor = (artistRanking.getRanking() <= 2 ? 1 : log2(artistRanking.getRanking()));
-					artistIdBoostFactorMap.put(artistId, boostFactor);
-
+					artistIdList.add(artistRanking.getArtistId());
+					artistIdBoostFactorMap.put(artistRanking.getArtistId(), log2(artistRanking.getRanking()));
 				}
 
-				String scriptStr = "Math.max(_score * params.boosts.get(doc['artist_id'].value) - _score , 0)";
+				String scriptStr = "params.boosts.get(doc[params.artistIdFieldName].value)";
+				String artistIdFieldName = "artist_id";
+
 				Map<String, Object> params = new HashMap<>();
 				params.put("boosts", artistIdBoostFactorMap);
+				params.put("artistIdFieldName", artistIdFieldName);
 
 				Script script =  new Script(ScriptType.INLINE, "painless", scriptStr, params);
 
-				scriptScoreFunctionBuilders.add(
+				filterFunctionBuilderList.add(
 						new FunctionScoreQueryBuilder.FilterFunctionBuilder(
-								new TermsQueryBuilder("artist_id", artistIdList),
-								ScoreFunctionBuilders.scriptFunction(script)));
+								new TermsQueryBuilder(artistIdFieldName, artistIdList),
+								ScoreFunctionBuilders.scriptFunction(script)
+						));
 
 			}
 		}
 
-		FunctionScoreQueryBuilder.FilterFunctionBuilder[] filterFunctionBuilderArray = scriptScoreFunctionBuilders.toArray(new FunctionScoreQueryBuilder.FilterFunctionBuilder[0]);
+		FunctionScoreQueryBuilder.FilterFunctionBuilder[] filterFunctionBuilderArray = filterFunctionBuilderList.toArray(new FunctionScoreQueryBuilder.FilterFunctionBuilder[filterFunctionBuilderList.size()]);
+
 		FunctionScoreQueryBuilder functionScoreQueryBuilder = new FunctionScoreQueryBuilder(boolQueryBuilder, filterFunctionBuilderArray)
-				.scoreMode(FunctionScoreQuery.ScoreMode.SUM)
-				.boostMode(CombineFunction.SUM);
+				.boost(1)
+				.scoreMode(FunctionScoreQuery.ScoreMode.MULTIPLY)
+				.boostMode(CombineFunction.MULTIPLY);
 
 		searchSourceBuilder.query(functionScoreQueryBuilder);
 		searchSourceBuilder.sort("_score", SortOrder.DESC);
 		searchSourceBuilder.from(from);
 		searchSourceBuilder.size(size);
+
+		log.info("search request: {}", searchRequest);
 
 		List<ArtistDocument> result = new ArrayList<>();
 		try {
@@ -156,7 +157,7 @@ public class ElasticSearchService implements Constants {
 	{
 		return (float) (Math.log(x) / Math.log(2));
 	}
-	
+
 
 	/**
 	 * indexes a given document in the given index

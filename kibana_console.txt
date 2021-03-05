@@ -6,10 +6,11 @@ GET /_cat/health
 GET /_cat/nodes?v
 GET /_cluster/pending_tasks
 
-DELETE /content
+DELETE /content*
 DELETE /listen-event*
 DELETE /artist-ranking*
 DELETE /user-profile*
+DELETE /content*,listen-event*,artist-ranking*,user-profile*
 
 #part1 - find first 
 
@@ -36,7 +37,7 @@ POST /content/_search
 {
   "query": {
     "multi_match": {
-      "query": "s",
+      "query": "Hélène",
       "fields": [
         "artist_name"
       ]
@@ -48,7 +49,8 @@ POST /content/_search
 
 POST _analyze 
 {
-  "text": "Hélène Ségara it's !<>#"
+  "text": "Hélène Ségara it's !<>#",
+  "tokenizer": "standard"
 }
 
 POST _analyze 
@@ -60,14 +62,14 @@ POST _analyze
       "pattern": "[^\\s\\p{L}\\p{N}]",
       "replacement": ""
     }
-  ],
+  ], 
   "filter": [
-    "lowercase",
     "asciifolding",
+    "lowercase",
     {
       "type": "edge_ngram",
       "min_gram": "1",
-      "max_gram": "12"
+      "max_gram": "15"
     }
   ], 
   "tokenizer": "standard"
@@ -89,7 +91,7 @@ POST _analyze
     {
       "type": "edge_ngram",
       "min_gram": "1",
-      "max_gram": "12"
+      "max_gram": "15"
     }
   ],
   "tokenizer": "standard"
@@ -102,7 +104,7 @@ PUT /content
   "settings": {
     "analysis": {
       "char_filter": {
-        "specialchar_removal_charfilter": {
+        "non_aln_char_removal_charfilter": {
           "type": "pattern_replace",
           "pattern": "[^\\s\\p{L}\\p{N}]",
           "replacement": ""
@@ -112,13 +114,13 @@ PUT /content
         "front_ngram": {
           "type": "edge_ngram",
           "min_gram": "1",
-          "max_gram": "12"
+          "max_gram": "15"
         }
       },
       "analyzer": {
         "i_prefix": {
           "char_filter": [
-            "specialchar_removal_charfilter"
+            "non_aln_char_removal_charfilter"
           ],
           "filter": [
             "lowercase",
@@ -129,7 +131,7 @@ PUT /content
         },
         "q_prefix": {
           "char_filter": [
-            "specialchar_removal_charfilter"
+            "non_aln_char_removal_charfilter"
           ],
           "filter": [
             "lowercase",
@@ -186,7 +188,7 @@ POST /content/_search
 {
   "query": {
     "multi_match": {
-      "query": "sez",
+      "query": "sel",
       "fuzziness": 1, 
       "fields": [
         "artist_name.prefix"
@@ -252,13 +254,23 @@ POST /content/_search
   ]
 }
 
+# trigger listen events for user1 - a4 - "Hélène Ségara" to increase ranking
+GET /_cat/indices
+
+POST /listen-event-*/_search
+
+POST /content/_search
+
+POST /user-profile/_search
+
 
 #part 3 - boost by user behavior (listened artists)
+
+# trigger listen events for user2 - a3 - "Shakira" to increase ranking
 
 
 POST /user-profile/_search
 
-POST /listen-event-2021-02*/_search
 
 POST /content/_search
 {
@@ -325,6 +337,3 @@ POST /content/_search
   ]
 }
 
-POST /listen-event-*/_search
-
-POST /user-profile/_search

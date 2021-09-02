@@ -66,8 +66,6 @@ public class ElasticSearchService implements Constants {
 		SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
 		searchRequest.source(searchSourceBuilder);
 
-		UserProfile userProfile = getDocument(USER_PROFILE_INDEX_NAME, userId, UserProfile.class);
-
 		// full text search - query string
 		BoolQueryBuilder boolQueryBuilder = new BoolQueryBuilder()
 				.should(new MultiMatchQueryBuilder(queryString)
@@ -98,6 +96,8 @@ public class ElasticSearchService implements Constants {
 
 		// user profile based score function builder
 		if (includeUserProfile) {
+			UserProfile userProfile = getDocument(USER_PROFILE_INDEX_NAME, userId, UserProfile.class);
+
 			if (userProfile != null && !userProfile.getArtistRankingSet().isEmpty()) {
 				List<String> artistIdList = new ArrayList<>();
 				Map<String, Float> artistIdBoostFactorMap = new HashMap<>();

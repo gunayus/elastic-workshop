@@ -189,15 +189,15 @@ public class EventProcessingService implements Constants {
 		QueryBuilder queryBuilder = QueryBuilders.matchAllQuery();
 		searchSourceBuilder.query(queryBuilder);
 		searchSourceBuilder.aggregation(AggregationBuilders.terms("artist_rankings")
-				.field("artist_id")
+				.field("artist_id.keyword")
 				.size(1000)
 		);
 
 		searchSourceBuilder.aggregation(AggregationBuilders.terms("users")
-				.field("user_id")
+				.field("user_id.keyword")
 				.size(1000)
 				.subAggregation(AggregationBuilders.terms("artist_rankings")
-						.field("artist_id")
+						.field("artist_id.keyword")
 						.size(1000)
 				)
 		);

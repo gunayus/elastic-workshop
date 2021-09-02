@@ -12,7 +12,7 @@ DELETE /artist-ranking*
 DELETE /user-profile*
 DELETE /content*,listen-event*,artist-ranking*,user-profile*
 
-#part1 - find first 
+#part1 - find first
 
 POST /content/_bulk
 { "index" : {"_id" : "a1" } }
@@ -47,13 +47,13 @@ POST /content/_search
 
 # special thanks to AppSearch : https://www.elastic.co/app-search/
 
-POST _analyze 
+POST _analyze
 {
   "text": "Hélène Ségara it's !<>#",
   "tokenizer": "standard"
 }
 
-POST _analyze 
+POST _analyze
 {
   "text": "Hélène Ségara it's !<>#",
   "char_filter": [
@@ -62,7 +62,7 @@ POST _analyze
       "pattern": "[^\\s\\p{L}\\p{N}]",
       "replacement": ""
     }
-  ], 
+  ],
   "filter": [
     "asciifolding",
     "lowercase",
@@ -71,11 +71,11 @@ POST _analyze
       "min_gram": "1",
       "max_gram": "15"
     }
-  ], 
+  ],
   "tokenizer": "standard"
 }
 
-POST _analyze 
+POST _analyze
 {
   "text": "Hélène Ségara it's !<>#",
   "char_filter": [
@@ -84,7 +84,7 @@ POST _analyze
       "pattern": "[^\\s\\p{L}\\p{N}]",
       "replacement": ""
     }
-  ], 
+  ],
   "filter": [
     "lowercase",
     "asciifolding",
@@ -189,7 +189,7 @@ POST /content/_search
   "query": {
     "multi_match": {
       "query": "sel",
-      "fuzziness": 1, 
+      "fuzziness": 1,
       "fields": [
         "artist_name.prefix"
       ]
@@ -240,7 +240,7 @@ POST /content/_search
           }
         }
       ],
-      "boost": 1, 
+      "boost": 1,
       "boost_mode": "multiply",
       "score_mode": "multiply"
     }
@@ -262,6 +262,40 @@ POST /listen-event-*/_search
 POST /content/_search
 
 POST /user-profile/_search
+
+POST /listen-event-*/_search
+{
+  "size": 0,
+  "aggs": {
+    "by_artistid": {
+      "terms": {
+        "field": "artist_id.keyword",
+        "size": 10
+      }
+    }
+  }
+}
+
+POST /listen-event-*/_search
+{
+  "size": 0,
+  "aggs": {
+    "by_userid": {
+      "terms": {
+        "field": "user_id.keyword",
+        "size": 10
+      },
+      "aggs": {
+        "by_artist_id": {
+          "terms": {
+            "field": "artist_id.keyword",
+            "size": 10
+          }
+        }
+      }
+    }
+  }
+}
 
 
 #part 3 - boost by user behavior (listened artists)

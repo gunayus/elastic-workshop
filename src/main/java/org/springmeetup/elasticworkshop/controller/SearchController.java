@@ -20,9 +20,9 @@ public class SearchController {
 
 	@GetMapping("/artist")
 	public List<ArtistDocument> searchArtists(@RequestParam(name = "q", required = true) String queryString,
-	                                          @RequestParam(name = "userid", required = true) String userId,
-	                                          @RequestParam(name = "includeRanking", required = true) boolean includeRanking,
-	                                          @RequestParam(name = "includeUserProfile", required = true) boolean includeUserProfile,
+	                                          @RequestParam(name = "userid", required = false) String userId,
+	                                          @RequestParam(name = "includeRanking", required = false) boolean includeRanking,
+	                                          @RequestParam(name = "includeUserProfile", required = false) boolean includeUserProfile,
 	                                          @RequestParam(name = "from", required = false, defaultValue = "0") Integer from,
 	                                          @RequestParam(name = "size", required = false, defaultValue = "10") Integer size
 	                                          ) {

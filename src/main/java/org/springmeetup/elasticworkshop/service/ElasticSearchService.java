@@ -37,10 +37,8 @@ import org.springmeetup.elasticworkshop.model.ArtistRanking;
 import org.springmeetup.elasticworkshop.model.UserProfile;
 
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -141,11 +139,13 @@ public class ElasticSearchService implements Constants {
 		List<ArtistDocument> result = new ArrayList<>();
 		try {
 			SearchResponse searchResponse = client.search(searchRequest, RequestOptions.DEFAULT);
-			for (SearchHit searchHit : searchResponse.getHits().getHits()) {
-				ArtistDocument artistDocument = toDocumentObject(searchHit.getSourceAsString(), ArtistDocument.class);
-				artistDocument.set_score(searchHit.getScore());
-				result.add(artistDocument);
-			}
+			result = Arrays.stream(searchResponse.getHits().getHits())
+					.map(searchHit -> {
+						ArtistDocument artistDocument = toDocumentObject(searchHit.getSourceAsString(), ArtistDocument.class);
+						artistDocument.set_score(searchHit.getScore());
+						return artistDocument;
+					})
+					.collect(Collectors.toList());
 		} catch (IOException ioe) {
 			throw new RuntimeException(ioe);
 		}

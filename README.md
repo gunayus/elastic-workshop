@@ -1,15 +1,20 @@
 # elastic-workshop
-Elastic workshop meetup repository 14 May 2020
+Live Coding:  Spring, Kafka, & Elasticsearch. Personalized Search Results on Ranking and User Profile
 
 This workshop aims to share the knowledge and the experience which is gained in a migration project to use elasticsearch as the search engine for our music app. 
 
 Elasticsearch is used to index artist, song, album, playlist metadata providing full text search capabilities as well as popularity and personal behaviour based scoring functionality so that more popular and more relevant results are boosted in the search results for individual users.
 
+Kafka is used to transfer listen events so that user profiles and artist rankings can be updated
+
+Spring is used to put all together, as always :) 
+
 ## 1 introduction
 
 ## 1.1 pre-requisites
-+ elastic search 7.x +
-+ kibana 7.x +
++ elastic search 7.13 +
++ kibana 7.13 +
++ kafka 2.13 +
 + spring boot 2.2.x +
 + java 8+
 
